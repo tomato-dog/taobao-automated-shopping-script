@@ -1,0 +1,146 @@
+# 淘宝抢购脚本
+import os
+import datetime
+import time
+from selenium import webdriver
+from selenium.webdriver.edge.service import Service
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import *
+
+# ==== 核心配置（必须手动适配）====
+BUY_TIME = "2026-01-15 13:20:00"  # 抢购时间！！！
+DRIVER_PATH = "C:\\Users\\fqgg\\Desktop\\msedgedriver.exe"  # Edge驱动路径，自行修改！！！
+# 【手动抓你当前页面的元素选择器】
+SELECT_ALL_XPATH ="//*[@id='cart-operation-fixed']/div[1]/label/span[2]"  # 步骤见下文,已抓取tb的全选/结算/提交！！！
+SETTLE_XPATH = "//*[@id='settlementContainer_1']/div[4]/div/div[2]"
+SUBMIT_XPATH = "//*[@id='submitOrder']/div/div[2]/div/div[2]/div"
+
+RETRY_TIMES = 300
+OPERATE_DELAY = 0.3
+
+# ==== 初始化 ====
+buy_time = datetime.datetime.strptime(BUY_TIME, '%Y-%m-%d %H:%M:%S')
+now = datetime.datetime.now()
+if now >= buy_time:
+    print("❌ 时间已过！")
+    exit(0)
+
+options = Options()
+options.add_argument('--no-sandbox')
+options.add_argument('--disable-blink-features=AutomationControlled')
+options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0')
+driver = webdriver.Edge(service=Service(DRIVER_PATH, log_path=os.devnull), options=options)
+driver.maximize_window()
+driver.implicitly_wait(5)
+
+
+# ==== 登录（手动确认）====
+def login():
+    driver.get("https://cart.taobao.com/cart.htm")
+    print("📱 登录后在终端按回车继续...")
+    input()
+    print("✅ 登录成功！")
+
+
+# ==== 手动抓元素的步骤====
+def get_element_xpath():
+    print("\n📌 请手动获取以下元素的XPATH：")
+    print("1. 购物车全选按钮：右键全选按钮 → 检查 → 右键Elements面板中的对应元素 → Copy → Copy XPATH")
+    print("2. 购物车结算按钮：同上，右键结算按钮复制XPATH")
+    print("3. 订单页提交按钮：先手动点结算进入订单页，再右键提交按钮复制XPATH")
+    print("\n请将复制的XPATH分别粘贴到配置中的 SELECT_ALL_XPATH、SETTLE_XPATH、SUBMIT_XPATH")
+    input("粘贴完成后按回车继续...")
+
+
+# ==== 倒计时 ====
+def countdown():
+    while True:
+        now = datetime.datetime.now()
+        diff = (buy_time - now).total_seconds()
+        if diff <= 0.5:
+            print("⏰ 抢购开始！")
+            break
+        elif diff <= 60:
+            print(f"⌛ 倒计时：{int(diff)}秒")
+            time.sleep(1)
+        else:
+            print(f"⌛ 还有{int(diff//60)}分{int(diff%60)}秒")
+            time.sleep(10)
+            driver.refresh()
+            time.sleep(1)
+
+
+# ==== 核心抢购====
+def rush_buy():
+    print("⚡ 开始抢购...")
+    success = False
+    for attempt in range(1, RETRY_TIMES + 1):
+        try:
+            now = datetime.datetime.now()
+            if now < buy_time:
+                continue
+            
+            print(f"\n📌 第{attempt}次尝试 | {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+            
+            # 1. 全选（用你手动抓的选择器）
+            try:
+                all_select = WebDriverWait(driver, 2).until(
+                    EC.element_to_be_clickable((By.XPATH, SELECT_ALL_XPATH))
+                )
+                if not all_select.is_selected():
+                    all_select.click()
+                    time.sleep(OPERATE_DELAY)
+                print("✅ 全选成功")
+            except:
+                print("⚠️ 全选失败，重试")
+                driver.refresh()
+                time.sleep(1)
+                continue
+            
+            # 2. 结算（用你手动抓的选择器）
+            try:
+                settle_btn = WebDriverWait(driver, 2).until(
+                    EC.element_to_be_clickable((By.XPATH, SETTLE_XPATH))
+                )
+                driver.execute_script("arguments[0].click();", settle_btn)
+                time.sleep(OPERATE_DELAY)
+                print("✅ 结算成功")
+            except:
+                print("⚠️ 结算失败，重试")
+                driver.get("https://cart.taobao.com/cart.htm")
+                time.sleep(1)
+                continue
+            
+            # 3. 提交订单（用你手动抓的选择器）
+            try:
+                submit_btn = WebDriverWait(driver, 3, poll_frequency=0.1).until(
+                    EC.element_to_be_clickable((By.XPATH, SUBMIT_XPATH))
+                )
+                driver.execute_script("arguments[0].click();", submit_btn)
+                print("🎉 提交成功！立即支付！")
+                success = True
+                break
+            except:
+                print("⚠️ 提交失败，重试")
+                driver.get("https://buy.tmall.com/order/confirm_order.htm")
+                time.sleep(1)
+        
+        except Exception as e:
+            print(f"⚠️ 异常：{str(e)[:50]}")
+            driver.get("https://cart.taobao.com/cart.htm")
+            time.sleep(1)
+    
+    if not success:
+        print("\n❌ 抢购结束")
+    driver.quit()
+
+
+# ==== 执行====
+if __name__ == "__main__":
+    login()
+    get_element_xpath()  # 先手动抓元素
+    countdown()
+    rush_buy()
